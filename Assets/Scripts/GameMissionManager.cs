@@ -1,45 +1,96 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.SceneManagement;
+using UnityEngine.InputSystem;
 using TMPro;
+using StarterAssets;
 
 public class GameMissionManager : MonoBehaviour
 {
     public static GameMissionManager Instance;
 
     [Header("Mission & Timer Settings")]
-    public float missionTime = 60f; // প্রতি রাউন্ডে বেঁচে থাকার সময় (সেকেন্ড)
-    public int targetCoins = 5;     // প্রতিটি চারা পেতে যতগুলো কয়েন লাগবে
+    public float missionTime = 60f;
+    public int targetCoins = 5;
     private float currentTimer;
     private int currentCoins = 0;
-    private bool isMissionActive = true;
+    private bool isMissionActive = false;
 
     [Header("Sapling & Pollution Settings")]
-    public int saplingCount = 0;      // প্লেয়ারের হাতে কয়টি চারা আছে
-    public int treesPlanted = 0;      // কয়টি গাছ লাগানো হয়েছে (৩টি হলে জয়)
-    public int totalTreesNeeded = 3;  // পরিবেশ স্বাভাবিক করতে মোট ৩টি গাছ লাগবে
+    public int saplingCount = 0;
+    public int treesPlanted = 0;
+    public int totalTreesNeeded = 3;
 
     [Header("Fog Settings")]
-    public float maxFogDensity = 0.04f;   // শুরুতে ঘন ধোঁয়া
-    public float minFogDensity = 0.002f;  // ৩টি গাছ লাগানোর পর পরিষ্কার পরিবেশ
+    public float maxFogDensity = 0.04f;
+    public float minFogDensity = 0.002f;
 
-    [Header("UI References")]
+    [Header("HUD UI References")]
     public TextMeshProUGUI timerText;
     public TextMeshProUGUI coinText;
     public TextMeshProUGUI saplingText;
     public Slider pollutionSlider;
-    public TextMeshProUGUI statusMessageText; // স্ক্রিনে মেসেজ দেখানোর জন্য
+    public TextMeshProUGUI statusMessageText;
+
+    [Header("Screen Panels & Player")]
+    public GameObject introPanel;
+    public GameObject winPanel;
+    public GameObject gameOverPanel;
+    public MonoBehaviour playerController;
+    private PlayerInput playerInput;
+    private StarterAssetsInputs starterInputs;
 
     void Awake()
     {
         Instance = this;
+        if (playerController != null)
+        {
+            playerInput = playerController.GetComponent<PlayerInput>();
+            starterInputs = playerController.GetComponent<StarterAssetsInputs>();
+        }
     }
 
     void Start()
     {
         RenderSettings.fog = true;
-        StartNewMission();
         UpdateEnvironment();
         UpdateUI();
+
+        if (winPanel != null) winPanel.SetActive(false);
+        if (gameOverPanel != null) gameOverPanel.SetActive(false);
+
+        if (introPanel != null)
+        {
+            introPanel.SetActive(true);
+            PauseGameAndUnlockCursor();
+        }
+        else
+        {
+            BeginGameplay();
+        }
+    }
+
+    public void BeginGameplay()
+    {
+        if (introPanel != null) introPanel.SetActive(false);
+        Time.timeScale = 1f;
+
+        if (playerController != null) playerController.enabled = true;
+        if (starterInputs != null)
+        {
+            starterInputs.enabled = true;
+            starterInputs.cursorLocked = true;
+            starterInputs.cursorInputForLook = true;
+        }
+        if (playerInput != null)
+        {
+            playerInput.ActivateInput();
+            playerInput.SwitchCurrentActionMap("Player");
+        }
+
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
+        StartNewMission();
     }
 
     void Update()
@@ -50,7 +101,6 @@ public class GameMissionManager : MonoBehaviour
         if (timerText != null)
             timerText.text = "Time: " + Mathf.CeilToInt(currentTimer) + "s";
 
-        // সময় শেষ হলে চেক করবে টার্গেট কয়েন হয়েছে কি না
         if (currentTimer <= 0f)
         {
             CheckMissionResult();
@@ -80,13 +130,13 @@ public class GameMissionManager : MonoBehaviour
 
         if (currentCoins >= targetCoins)
         {
-            saplingCount++; // সিস্টেম থেকে ১টি চারা রিওয়ার্ড পেল
-            ShowMessage("Level Complete! You got 1 Sapling! Plant it now.");
+            saplingCount++;
+            ShowMessage("Round Complete! You got 1 Sapling! Plant it at a marked spot.");
         }
         else
         {
-            ShowMessage("Time Up! Not enough coins. Retrying round...");
-            Invoke(nameof(StartNewMission), 2.5f); // ২.৫ সেকেন্ড পর আবার চেষ্টা করবে
+            ShowMessage("Time Up! Not enough coins.");
+            TriggerGameOver();
         }
         UpdateUI();
     }
@@ -99,18 +149,52 @@ public class GameMissionManager : MonoBehaviour
 
         if (treesPlanted >= totalTreesNeeded)
         {
+            isMissionActive = false;
             ShowMessage("Congratulations! Village Environment is now Clean & Normal!");
+            TriggerWin();
         }
         else
         {
-            ShowMessage("Pollution Reduced! Starting next survival round...");
+            ShowMessage("Pollution Reduced! Starting next round...");
             Invoke(nameof(StartNewMission), 2.5f);
         }
     }
 
+    void TriggerWin()
+    {
+        if (winPanel != null) winPanel.SetActive(true);
+        PauseGameAndUnlockCursor();
+    }
+
+    void TriggerGameOver()
+    {
+        if (gameOverPanel != null) gameOverPanel.SetActive(true);
+        PauseGameAndUnlockCursor();
+    }
+
+    void PauseGameAndUnlockCursor()
+    {
+        if (playerController != null) playerController.enabled = false;
+        if (starterInputs != null)
+        {
+            starterInputs.cursorLocked = false;
+            starterInputs.cursorInputForLook = false;
+        }
+        if (playerInput != null) playerInput.DeactivateInput();
+
+        Time.timeScale = 0f;
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+    }
+
+    public void RestartGame()
+    {
+        Time.timeScale = 1f;
+        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+    }
+
     void UpdateEnvironment()
     {
-        // ৩টি গাছ লাগালে ratio 1 থেকে কমে 0 হবে
         float pollutionRatio = 1f - ((float)treesPlanted / totalTreesNeeded);
         pollutionRatio = Mathf.Clamp01(pollutionRatio);
 
